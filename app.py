@@ -5,23 +5,10 @@ import os
 import zipfile
 import json
 from datetime import datetime
-import pyperclip
 import time
 
 st.set_page_config(page_title="PDF Downloader", layout="wide")
 st.title("📄 PDF Manual Downloader")
-
-# st.markdown("""
-# Upload a CSV file with the following columns:
-# - `DOI` (preferred) or `URL`
-# - `Bib Key`
-
-# For each entry, you'll get:
-# - A direct link to open/download the PDF
-# - The correct filename to rename the file after download
-# - A one-click copy button for the filename
-# - A checkbox to mark as downloaded
-# """)
 
 # Initialize session state for persistence
 if 'downloaded_keys' not in st.session_state:
@@ -63,8 +50,6 @@ with st.sidebar:
             st.caption(f"⏱️ Est. {estimated_time} min remaining")
         
         st.divider()
-    
-
     
     # Save progress
     st.subheader("💾 Save Progress")
@@ -160,14 +145,85 @@ with st.sidebar:
 # Main content area
 uploaded_file = st.file_uploader("📄 Upload your ACM CSV", type=["csv"])
 
-def copy_to_clipboard(text, key):
-    """Helper function to copy text to clipboard"""
-    try:
-        pyperclip.copy(text)
-        return True
-    except Exception as e:
-        st.error(f"Failed to copy to clipboard: {str(e)}")
-        return False
+def create_copy_button(text_to_copy, button_key):
+    """Create a copy button using JavaScript that works in the browser"""
+    # Escape single quotes in the text to prevent JavaScript errors
+    escaped_text = text_to_copy.replace("'", "\\'").replace('"', '\\"')
+    
+    button_html = f"""
+    <button 
+        onclick="copyToClipboard_{button_key}()" 
+        style="
+            background-color: #ff4b4b;
+            color: white;
+            border: none;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.25rem;
+            cursor: pointer;
+            font-size: 0.8rem;
+            margin-left: 0.5rem;
+            transition: all 0.2s ease;
+        "
+        id="copy_{button_key}"
+        onmouseover="this.style.backgroundColor='#ff6b6b'"
+        onmouseout="this.style.backgroundColor='#ff4b4b'"
+    >
+        📋 Copy
+    </button>
+    
+    <script>
+    function copyToClipboard_{button_key}() {{
+        const text = '{escaped_text}';
+        const button = document.getElementById('copy_{button_key}');
+        
+        if (navigator.clipboard && navigator.clipboard.writeText) {{
+            navigator.clipboard.writeText(text).then(function() {{
+                // Change button text to show success
+                button.innerHTML = '✅ Copied!';
+                button.style.backgroundColor = '#00cc88';
+                
+                // Reset button after 2 seconds
+                setTimeout(function() {{
+                    button.innerHTML = '📋 Copy';
+                    button.style.backgroundColor = '#ff4b4b';
+                }}, 2000);
+            }}, function(err) {{
+                console.error('Could not copy text: ', err);
+                button.innerHTML = '❌ Failed';
+                button.style.backgroundColor = '#ff6b6b';
+                setTimeout(function() {{
+                    button.innerHTML = '📋 Copy';
+                    button.style.backgroundColor = '#ff4b4b';
+                }}, 2000);
+            }});
+        }} else {{
+            // Fallback for older browsers
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {{
+                document.execCommand('copy');
+                button.innerHTML = '✅ Copied!';
+                button.style.backgroundColor = '#00cc88';
+                setTimeout(function() {{
+                    button.innerHTML = '📋 Copy';
+                    button.style.backgroundColor = '#ff4b4b';
+                }}, 2000);
+            }} catch (err) {{
+                button.innerHTML = '❌ Failed';
+                button.style.backgroundColor = '#ff6b6b';
+                setTimeout(function() {{
+                    button.innerHTML = '📋 Copy';
+                    button.style.backgroundColor = '#ff4b4b';
+                }}, 2000);
+            }}
+            document.body.removeChild(textArea);
+        }}
+    }}
+    </script>
+    """
+    return button_html
 
 def get_doi(row):
     """Extract DOI from row data"""
@@ -257,22 +313,15 @@ if uploaded_file:
                     
                     with col3:
                         # Use columns for filename display and copy
-                        filename_col, copy_col = st.columns([4, 1])
+                        filename_col, copy_col = st.columns([3, 1])
                         with filename_col:
-                            st.text_input(
-                                "Filename:",
-                                value=filename,
-                                key=f"filename_{i}",
-                                help="Select text and Ctrl+C to copy manually",
-                                label_visibility="collapsed"
-                            )
+                            st.code(filename, language=None)
                         with copy_col:
-                            # Copy button with actual functionality
-                            if st.button("📋", key=f"copy_{i}", help="Copy filename to clipboard"):
-                                if copy_to_clipboard(filename, f"copy_{i}"):
-                                    st.success("✅ Copied!")
-                                    time.sleep(0.5)  # Brief pause to show success
-                                    st.rerun()
+                            # JavaScript copy button
+                            st.markdown(
+                                create_copy_button(filename, f"copy_{i}"), 
+                                unsafe_allow_html=True
+                            )
                     
                     with col4:
                         # Interactive Done button with state management
@@ -311,6 +360,32 @@ if uploaded_file:
                         if st.button("↩️ Undo", key=f"undo_{i}", help="Mark as not done"):
                             st.session_state.downloaded_keys.discard(bibkey)
                             st.toast(f"↩️ Unmarked {bibkey}")
+                            st.rerun()
+
+        # Show failed items in a collapsible section
+        if failed_items:
+            with st.expander(f"❌ Failed Downloads ({len(failed_items)} files)", expanded=False):
+                for i, row in failed_items:
+                    bibkey = row["Bib Key"]
+                    doi_suffix = row["DOI_Parsed"]
+                    pdf_url = f"https://dl.acm.org/doi/pdf/{doi_suffix}"
+                    filename = f"{bibkey}.pdf"
+                    
+                    col1, col2, col3, col4 = st.columns([2, 2, 2, 1.5])
+                    
+                    with col1:
+                        st.markdown(f"**❌ {bibkey}**")
+                    
+                    with col2:
+                        st.link_button("🔗 Retry", pdf_url, use_container_width=True)
+                    
+                    with col3:
+                        st.code(filename, language=None)
+                    
+                    with col4:
+                        if st.button("↩️ Retry", key=f"retry_{i}", help="Move back to pending"):
+                            st.session_state.failed_keys.discard(bibkey)
+                            st.toast(f"↩️ Moved {bibkey} back to pending")
                             st.rerun()
 
         # Summary section
@@ -438,32 +513,7 @@ st.markdown("""
 - **Save Progress**: Download a progress file anytime to backup your work (includes both completed and failed items)
 - **Load Progress**: Upload a saved progress file to resume later
 - **Use Case**: Perfect for large batches that take multiple sessions
-
-
 """)
-
-# # Add progress explanation
-# st.markdown("""
-# ---
-# ### 🔄 Understanding Progress Files
-
-# **What is a Progress File?**
-# - A small JSON file that remembers which papers you've downloaded AND which ones failed
-# - Contains: completed Bib Keys, failed Bib Keys, timestamp, and total count
-# - Does NOT contain actual PDFs (just the completion and failure status)
-
-# **When to Use Progress Files:**
-# - **Large batches**: When working with 50+ papers across multiple sessions  
-# - **Collaboration**: Share progress with team members working on the same batch
-# - **Backup**: Save your work before closing the browser
-# - **Resume later**: Continue where you left off in a new session
-# - **Failed tracking**: Keep track of problematic papers that need attention
-
-# **How Progress Files Work:**
-# 1. **Save**: Downloads a small JSON file with your current progress (completed + failed)
-# 2. **Load**: Upload the JSON file to restore your completion and failure status
-# 3. **Merge**: Loading progress adds to (doesn't replace) your current progress
-# """)
 
 st.markdown("""
 *Tip: Progress files are lightweight (few KB) and safe to share - they contain no actual content, just completion and failure tracking!*

@@ -160,7 +160,7 @@ def create_copy_button_js(text, key):
                        color: white; border: none; padding: 4px 8px; 
                        border-radius: 4px; cursor: pointer; font-size: 11px;
                        transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-            📋 Copy
+            📋
         </button>
     </div>
     

@@ -286,7 +286,7 @@ if uploaded_file:
 
                 with st.container():
                     # Enhanced layout with better spacing
-                    col1, col2, col3, col4, col5 = st.columns([2, 2, 3, 1.5, 1.5])
+                    col1, col2, col3, col4, col5 = st.columns([2, 2, 4, 1.5, 1.5])
                     
                     with col1:
                         st.markdown(f"**{bibkey}**")

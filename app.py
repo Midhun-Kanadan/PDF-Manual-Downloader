@@ -5,6 +5,7 @@ import os
 import zipfile
 import json
 from datetime import datetime
+import streamlit.components.v1 as components
 import time
 
 st.set_page_config(page_title="PDF Downloader", layout="wide")
@@ -145,85 +146,70 @@ with st.sidebar:
 # Main content area
 uploaded_file = st.file_uploader("📄 Upload your ACM CSV", type=["csv"])
 
-def create_copy_button(text_to_copy, button_key):
-    """Create a copy button using JavaScript that works in the browser"""
-    # Escape single quotes in the text to prevent JavaScript errors
-    escaped_text = text_to_copy.replace("'", "\\'").replace('"', '\\"')
+def create_copy_button_js(text, key):
+    """Create a JavaScript-powered copy button that works in browsers"""
+    button_id = f"copy_btn_{key}"
     
-    button_html = f"""
-    <button 
-        onclick="copyToClipboard_{button_key}()" 
-        style="
-            background-color: #ff4b4b;
-            color: white;
-            border: none;
-            padding: 0.25rem 0.5rem;
-            border-radius: 0.25rem;
-            cursor: pointer;
-            font-size: 0.8rem;
-            margin-left: 0.5rem;
-            transition: all 0.2s ease;
-        "
-        id="copy_{button_key}"
-        onmouseover="this.style.backgroundColor='#ff6b6b'"
-        onmouseout="this.style.backgroundColor='#ff4b4b'"
-    >
-        📋 Copy
-    </button>
+    # Escape text for JavaScript
+    escaped_text = text.replace('\\', '\\\\').replace("'", "\\'").replace('"', '\\"')
+    
+    js_code = f"""
+    <div style="display: inline-block;">
+        <button id="{button_id}" onclick="copyText_{key}()" 
+                style="background: linear-gradient(90deg, #ff4b4b, #ff6b6b); 
+                       color: white; border: none; padding: 4px 8px; 
+                       border-radius: 4px; cursor: pointer; font-size: 11px;
+                       transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            📋 Copy
+        </button>
+    </div>
     
     <script>
-    function copyToClipboard_{button_key}() {{
+    async function copyText_{key}() {{
         const text = '{escaped_text}';
-        const button = document.getElementById('copy_{button_key}');
+        const button = document.getElementById('{button_id}');
+        const originalContent = button.innerHTML;
         
-        if (navigator.clipboard && navigator.clipboard.writeText) {{
-            navigator.clipboard.writeText(text).then(function() {{
-                // Change button text to show success
+        try {{
+            if (navigator.clipboard && window.isSecureContext) {{
+                await navigator.clipboard.writeText(text);
                 button.innerHTML = '✅ Copied!';
-                button.style.backgroundColor = '#00cc88';
-                
-                // Reset button after 2 seconds
-                setTimeout(function() {{
-                    button.innerHTML = '📋 Copy';
-                    button.style.backgroundColor = '#ff4b4b';
-                }}, 2000);
-            }}, function(err) {{
-                console.error('Could not copy text: ', err);
-                button.innerHTML = '❌ Failed';
-                button.style.backgroundColor = '#ff6b6b';
-                setTimeout(function() {{
-                    button.innerHTML = '📋 Copy';
-                    button.style.backgroundColor = '#ff4b4b';
-                }}, 2000);
-            }});
-        }} else {{
-            // Fallback for older browsers
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            document.body.appendChild(textArea);
-            textArea.select();
-            try {{
+                button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
+            }} else {{
+                // Fallback method
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.opacity = '0';
+                document.body.appendChild(textArea);
+                textArea.select();
                 document.execCommand('copy');
+                document.body.removeChild(textArea);
                 button.innerHTML = '✅ Copied!';
-                button.style.backgroundColor = '#00cc88';
-                setTimeout(function() {{
-                    button.innerHTML = '📋 Copy';
-                    button.style.backgroundColor = '#ff4b4b';
-                }}, 2000);
-            }} catch (err) {{
-                button.innerHTML = '❌ Failed';
-                button.style.backgroundColor = '#ff6b6b';
-                setTimeout(function() {{
-                    button.innerHTML = '📋 Copy';
-                    button.style.backgroundColor = '#ff4b4b';
-                }}, 2000);
+                button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
             }}
-            document.body.removeChild(textArea);
+            
+            // Reset button after 2 seconds
+            setTimeout(() => {{
+                button.innerHTML = originalContent;
+                button.style.background = 'linear-gradient(90deg, #ff4b4b, #ff6b6b)';
+            }}, 2000);
+            
+        }} catch (err) {{
+            console.error('Copy failed:', err);
+            button.innerHTML = '❌ Failed';
+            button.style.background = 'linear-gradient(90deg, #f44336, #da190b)';
+            
+            setTimeout(() => {{
+                button.innerHTML = originalContent;
+                button.style.background = 'linear-gradient(90deg, #ff4b4b, #ff6b6b)';
+            }}, 2000);
         }}
     }}
     </script>
     """
-    return button_html
+    
+    components.html(js_code, height=35)
 
 def get_doi(row):
     """Extract DOI from row data"""
@@ -312,16 +298,19 @@ if uploaded_file:
                         st.link_button("🔗 Open PDF", pdf_url, use_container_width=True)
                     
                     with col3:
-                        # Use columns for filename display and copy
+                        # Use columns for filename display and JavaScript copy button
                         filename_col, copy_col = st.columns([3, 1])
                         with filename_col:
-                            st.code(filename, language=None)
+                            st.text_input(
+                                "Filename:",
+                                value=filename,
+                                key=f"filename_{i}",
+                                help="Triple-click to select all, then Ctrl+C to copy manually",
+                                label_visibility="collapsed"
+                            )
                         with copy_col:
                             # JavaScript copy button
-                            st.markdown(
-                                create_copy_button(filename, f"copy_{i}"), 
-                                unsafe_allow_html=True
-                            )
+                            create_copy_button_js(filename, f"copy_{i}")
                     
                     with col4:
                         # Interactive Done button with state management
@@ -360,32 +349,6 @@ if uploaded_file:
                         if st.button("↩️ Undo", key=f"undo_{i}", help="Mark as not done"):
                             st.session_state.downloaded_keys.discard(bibkey)
                             st.toast(f"↩️ Unmarked {bibkey}")
-                            st.rerun()
-
-        # Show failed items in a collapsible section
-        if failed_items:
-            with st.expander(f"❌ Failed Downloads ({len(failed_items)} files)", expanded=False):
-                for i, row in failed_items:
-                    bibkey = row["Bib Key"]
-                    doi_suffix = row["DOI_Parsed"]
-                    pdf_url = f"https://dl.acm.org/doi/pdf/{doi_suffix}"
-                    filename = f"{bibkey}.pdf"
-                    
-                    col1, col2, col3, col4 = st.columns([2, 2, 2, 1.5])
-                    
-                    with col1:
-                        st.markdown(f"**❌ {bibkey}**")
-                    
-                    with col2:
-                        st.link_button("🔗 Retry", pdf_url, use_container_width=True)
-                    
-                    with col3:
-                        st.code(filename, language=None)
-                    
-                    with col4:
-                        if st.button("↩️ Retry", key=f"retry_{i}", help="Move back to pending"):
-                            st.session_state.failed_keys.discard(bibkey)
-                            st.toast(f"↩️ Moved {bibkey} back to pending")
                             st.rerun()
 
         # Summary section
@@ -503,7 +466,7 @@ st.markdown("""
 
 #### **Step 2: Download PDFs**
 1. **Click PDF links** to open papers in new browser tabs
-2. **Copy filenames** using the 📋 button (copies to clipboard automatically)
+2. **Copy filenames** using the 📋 button (works in all browsers!)
 3. **Download PDFs** from the opened tabs  
 4. **Rename downloaded files** using the copied filenames
 5. **Mark as Done** ✅ - successfully downloaded items disappear from the main list
@@ -513,10 +476,11 @@ st.markdown("""
 - **Save Progress**: Download a progress file anytime to backup your work (includes both completed and failed items)
 - **Load Progress**: Upload a saved progress file to resume later
 - **Use Case**: Perfect for large batches that take multiple sessions
+
 """)
 
 st.markdown("""
-*Tip: Progress files are lightweight (few KB) and safe to share - they contain no actual content, just completion and failure tracking!*
+*🚀 New: JavaScript-powered copy buttons work in all browsers and cloud deployments!*
 """)
 
 # Custom CSS for better styling and theme adaptation

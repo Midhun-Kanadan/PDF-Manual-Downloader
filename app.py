@@ -146,20 +146,86 @@ with st.sidebar:
 # Main content area
 uploaded_file = st.file_uploader("📄 Upload your ACM CSV", type=["csv"])
 
+# def create_copy_button_js(text, key):
+#     """Create a JavaScript-powered copy button that works in browsers"""
+#     button_id = f"copy_btn_{key}"
+    
+#     # Escape text for JavaScript
+#     escaped_text = text.replace('\\', '\\\\').replace("'", "\\'").replace('"', '\\"')
+    
+#     js_code = f"""
+#     <div style="display: inline-block;">
+#         <button id="{button_id}" onclick="copyText_{key}()" 
+#                 style="background: linear-gradient(90deg, #ff4b4b, #ff6b6b); 
+#                        color: white; border: none; padding: 4px 8px; 
+#                        border-radius: 4px; cursor: pointer; font-size: 11px;
+#                        transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+#             📋
+#         </button>
+#     </div>
+    
+#     <script>
+#     async function copyText_{key}() {{
+#         const text = '{escaped_text}';
+#         const button = document.getElementById('{button_id}');
+#         const originalContent = button.innerHTML;
+        
+#         try {{
+#             if (navigator.clipboard && window.isSecureContext) {{
+#                 await navigator.clipboard.writeText(text);
+#                 button.innerHTML = '✅ Copied!';
+#                 button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
+#             }} else {{
+#                 // Fallback method
+#                 const textArea = document.createElement('textarea');
+#                 textArea.value = text;
+#                 textArea.style.position = 'fixed';
+#                 textArea.style.opacity = '0';
+#                 document.body.appendChild(textArea);
+#                 textArea.select();
+#                 document.execCommand('copy');
+#                 document.body.removeChild(textArea);
+#                 button.innerHTML = '✅ Copied!';
+#                 button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
+#             }}
+            
+#             // Reset button after 2 seconds
+#             setTimeout(() => {{
+#                 button.innerHTML = originalContent;
+#                 button.style.background = 'linear-gradient(90deg, #ff4b4b, #ff6b6b)';
+#             }}, 2000);
+            
+#         }} catch (err) {{
+#             console.error('Copy failed:', err);
+#             button.innerHTML = '❌ Failed';
+#             button.style.background = 'linear-gradient(90deg, #f44336, #da190b)';
+            
+#             setTimeout(() => {{
+#                 button.innerHTML = originalContent;
+#                 button.style.background = 'linear-gradient(90deg, #ff4b4b, #ff6b6b)';
+#             }}, 2000);
+#         }}
+#     }}
+#     </script>
+#     """
+    
+#     components.html(js_code, height=35)
 def create_copy_button_js(text, key):
-    """Create a JavaScript-powered copy button that works in browsers"""
+    """Create a JavaScript-powered copy button that works in browsers - Icon only"""
     button_id = f"copy_btn_{key}"
     
     # Escape text for JavaScript
     escaped_text = text.replace('\\', '\\\\').replace("'", "\\'").replace('"', '\\"')
     
     js_code = f"""
-    <div style="display: inline-block;">
+    <div style="display: inline-block; width: 100%;">
         <button id="{button_id}" onclick="copyText_{key}()" 
                 style="background: linear-gradient(90deg, #ff4b4b, #ff6b6b); 
                        color: white; border: none; padding: 4px 8px; 
-                       border-radius: 4px; cursor: pointer; font-size: 11px;
-                       transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                       border-radius: 4px; cursor: pointer; font-size: 14px;
+                       transition: all 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                       width: 100%; min-width: 35px; white-space: nowrap;"
+                title="Copy filename">
             📋
         </button>
     </div>
@@ -173,7 +239,7 @@ def create_copy_button_js(text, key):
         try {{
             if (navigator.clipboard && window.isSecureContext) {{
                 await navigator.clipboard.writeText(text);
-                button.innerHTML = '✅ Copied!';
+                button.innerHTML = '✅';
                 button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
             }} else {{
                 // Fallback method
@@ -185,7 +251,7 @@ def create_copy_button_js(text, key):
                 textArea.select();
                 document.execCommand('copy');
                 document.body.removeChild(textArea);
-                button.innerHTML = '✅ Copied!';
+                button.innerHTML = '✅';
                 button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
             }}
             
@@ -197,7 +263,75 @@ def create_copy_button_js(text, key):
             
         }} catch (err) {{
             console.error('Copy failed:', err);
-            button.innerHTML = '❌ Failed';
+            button.innerHTML = '❌';
+            button.style.background = 'linear-gradient(90deg, #f44336, #da190b)';
+            
+            setTimeout(() => {{
+                button.innerHTML = originalContent;
+                button.style.background = 'linear-gradient(90deg, #ff4b4b, #ff6b6b)';
+            }}, 2000);
+        }}
+    }}
+    </script>
+    """
+    
+    components.html(js_code, height=35)
+
+# Alternative: Even more compact with different icons
+def create_compact_copy_button_js(text, key):
+    """Ultra-compact copy button with different icon options"""
+    button_id = f"copy_btn_{key}"
+    
+    # Escape text for JavaScript
+    escaped_text = text.replace('\\', '\\\\').replace("'", "\\'").replace('"', '\\"')
+    
+    js_code = f"""
+    <div style="display: inline-block; width: 100%;">
+        <button id="{button_id}" onclick="copyText_{key}()" 
+                style="background: linear-gradient(90deg, #ff4b4b, #ff6b6b); 
+                       color: white; border: none; padding: 3px 6px; 
+                       border-radius: 3px; cursor: pointer; font-size: 12px;
+                       transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                       width: 100%; min-width: 28px;"
+                title="Copy filename">
+            📄
+        </button>
+    </div>
+    
+    <script>
+    async function copyText_{key}() {{
+        const text = '{escaped_text}';
+        const button = document.getElementById('{button_id}');
+        const originalContent = button.innerHTML;
+        
+        try {{
+            if (navigator.clipboard && window.isSecureContext) {{
+                await navigator.clipboard.writeText(text);
+                button.innerHTML = '✓';
+                button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
+            }} else {{
+                // Fallback method
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.opacity = '0';
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                button.innerHTML = '✓';
+                button.style.background = 'linear-gradient(90deg, #4CAF50, #45a049)';
+            }}
+            
+            // Reset button after 2 seconds
+            setTimeout(() => {{
+                button.innerHTML = originalContent;
+                button.style.background = 'linear-gradient(90deg, #ff4b4b, #ff6b6b)';
+            }}, 2000);
+            
+        }} catch (err) {{
+            console.error('Copy failed:', err);
+            button.innerHTML = '✗';
             button.style.background = 'linear-gradient(90deg, #f44336, #da190b)';
             
             setTimeout(() => {{

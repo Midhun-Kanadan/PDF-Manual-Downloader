@@ -33,19 +33,26 @@ def copy_to_clipboard(text, key):
         st.error(f"⚠️ Clipboard error: {str(e)}")
         return False
 
-def preprocess_url(url):
-    """Cleans URLs by removing backslashes and upgrading HTTP to HTTPS."""
-    if not url:
-        return url
-    cleaned_url = url.replace('\\', '')
-    if cleaned_url.startswith('http://'):
-        cleaned_url = 'https://' + cleaned_url[len('http://'):]
-    return cleaned_url
+def get_doi_from_row(row):
+    """Extracts a valid DOI from a row, checking DOI and URL columns."""
+    # Check DOI column first
+    if 'DOI' in row and pd.notna(row["DOI"]):
+        doi = str(row["DOI"]).strip()
+        if doi:
+            return doi
+    # Check URL column for a doi.org link
+    if 'URL' in row and pd.notna(row["URL"]):
+        url = str(row["URL"]).strip()
+        if "doi.org" in url:
+            # Extract the path part, which is the DOI
+            return str(urllib.parse.urlparse(url).path).strip("/")
+    return None
 
 # --- Sidebar ---
 with st.sidebar:
     st.header("📊 Progress Management")
 
+    # Progress metrics
     if 'current_df' in st.session_state and st.session_state.csv_uploaded:
         total_files = len(st.session_state.current_df)
         completed_files = len(st.session_state.downloaded_keys)
@@ -60,18 +67,22 @@ with st.sidebar:
         with col2:
             st.metric("❌ Failed", failed_files)
             st.metric("⏳ Remaining", remaining_files)
-
+        
         st.progress(progress_percentage / 100)
         st.caption(f"{progress_percentage:.1f}% Processed")
 
     st.divider()
+
     st.header("⚙️ Processing Options")
-    prioritize_url = st.checkbox(
-        "Prioritize URL from CSV for 'Open Link'",
+    # NEW: Checkbox to control URL fallback behavior
+    include_url_fallback = st.checkbox(
+        "Include entries with invalid DOIs using their URL",
         value=True,
-        help="If checked, use the URL column first. If unchecked or URL is empty, use the DOI column."
+        help="If a row has no valid DOI, use the value in the 'URL' column as a direct link."
     )
+
     st.divider()
+
     st.subheader("💾 Save Progress")
     if st.session_state.downloaded_keys or st.session_state.failed_keys:
         progress_data = {
@@ -89,7 +100,9 @@ with st.sidebar:
         )
     else:
         st.info("No progress to save yet.")
+
     st.divider()
+
     st.subheader("📂 Load Progress")
     progress_file = st.file_uploader("Upload Progress File", type=["json"])
     if progress_file:
@@ -101,7 +114,9 @@ with st.sidebar:
             st.rerun()
         except Exception as e:
             st.error(f"❌ Error loading progress: {e}")
+
     st.divider()
+
     if st.button("🗑️ Clear All Progress", type="secondary", use_container_width=True):
         st.session_state.downloaded_keys.clear()
         st.session_state.failed_keys.clear()
@@ -116,45 +131,45 @@ if uploaded_file:
         df_original = pd.read_csv(uploaded_file, dtype=str).fillna('')
         st.session_state.csv_uploaded = True
 
-        required_cols = ["Bib Key", "Title"]
+        required_cols = ["Bib Key"]
         if not all(col in df_original.columns for col in required_cols):
-            st.error(f"❌ CSV must contain the columns: {', '.join(required_cols)}")
+            st.error(f"❌ CSV must contain the column: {', '.join(required_cols)}")
             st.stop()
 
+        # --- NEW & ENHANCED PROCESSING LOGIC ---
         displayable_entries = []
         skipped_entries = []
 
         for index, row in df_original.iterrows():
             entry = row.to_dict()
             bib_key = entry.get("Bib Key")
-            title = str(entry.get("Title", "")).strip()
-            doi_val = str(entry.get("DOI", "")).strip()
-            url_val = str(entry.get("URL", "")).strip()
-            
-            entry['link'] = None
-            entry['google_search_link'] = None
-            entry['entry_type'] = 'no_link'
+            doi = get_doi_from_row(row)
+            url = str(entry.get("URL", "")).strip()
 
-            if title:
-                safe_title = urllib.parse.quote_plus(title)
-                entry['google_search_link'] = f"https://www.google.com/search?q={safe_title}"
-
-            if prioritize_url and url_val:
-                entry['entry_type'] = 'url'
-                entry['link'] = preprocess_url(url_val)
-            elif doi_val:
+            if doi:
                 entry['entry_type'] = 'doi'
-                entry['link'] = f"https://doi.org/{doi_val}"
-
-            if entry['link'] or entry['google_search_link']:
+                entry['link'] = f"https://dl.acm.org/doi/pdf/{doi}"
+                entry['doi_parsed'] = doi
+                displayable_entries.append(entry)
+            elif include_url_fallback and url:
+                entry['entry_type'] = 'url_fallback'
+                entry['link'] = url
                 displayable_entries.append(entry)
             else:
-                skipped_entries.append({'Bib Key': bib_key, 'Reason': "No DOI, URL, or Title to process."})
-
+                reason = "No valid DOI and no fallback URL provided." if not url else "No valid DOI (URL fallback disabled)."
+                skipped_entries.append({'Bib Key': bib_key, 'Reason': reason})
+        
         df = pd.DataFrame(displayable_entries)
         st.session_state.current_df = df
+        
+        # --- Display processing summary ---
+        st.success(f"✅ Loaded {len(df_original)} total rows. Found {len(df)} displayable entries.")
 
-        st.success(f"✅ Loaded {len(df_original)} total rows. Found {len(df)} processable entries.")
+        num_doi = len(df[df['entry_type'] == 'doi']) if not df.empty else 0
+        num_fallback = len(df[df['entry_type'] == 'url_fallback']) if not df.empty else 0
+
+        st.info(f"🔍 Breakdown: **{num_doi}** entries with valid DOIs, **{num_fallback}** entries using URL fallback.")
+
         if skipped_entries:
             st.warning(f"⚠️ {len(skipped_entries)} rows were skipped.")
             with st.expander(f"View {len(skipped_entries)} Skipped Rows"):
@@ -164,6 +179,7 @@ if uploaded_file:
             st.warning("No processable entries found in the uploaded file.")
             st.stop()
 
+        # --- Filter items based on completion status ---
         pending_df = df[~df["Bib Key"].isin(st.session_state.downloaded_keys) & ~df["Bib Key"].isin(st.session_state.failed_keys)]
         completed_df = df[df["Bib Key"].isin(st.session_state.downloaded_keys)]
         failed_df = df[df["Bib Key"].isin(st.session_state.failed_keys)]
@@ -172,84 +188,69 @@ if uploaded_file:
 
         if pending_items:
             st.subheader(f"🔄 Pending Downloads ({len(pending_items)} remaining)")
-
+            
             for i, row in enumerate(pending_items):
                 bibkey = row["Bib Key"]
                 filename = f"{bibkey}.pdf"
-                link_url = row.get("link")
-                google_link = row.get("google_search_link")
+                link_url = row["link"]
                 entry_type = row["entry_type"]
-                # Use bibkey and loop index for truly unique keys
-                unique_key_base = f"{bibkey}_{i}"
-
+                
                 with st.container(border=True):
-                    col1, col2, col3, col4, col5, col6 = st.columns([2.5, 1.2, 1.2, 2.5, 1.2, 1.2])
-
+                    col1, col2, col3, col4, col5 = st.columns([2, 2, 3, 1.5, 1.5])
+                    
                     with col1:
                         st.markdown(f"**{bibkey}**")
-                        if entry_type == 'url':
-                            st.caption("🔗 Using URL")
-                        elif entry_type == 'doi':
-                            st.caption("📄 Using DOI")
-                        elif entry_type == 'no_link':
-                            st.caption("⚠️ No Direct Link")
-                        
+                        if entry_type == 'url_fallback':
+                            st.caption("🔗 URL Fallback")
                         if "Title" in row and row["Title"]:
-                            st.caption(f"{str(row['Title'])[:60]}...")
-
+                            st.caption(f"{str(row['Title'])[:50]}...")
+                    
                     with col2:
-                        if link_url:
-                            ### --- FIX: Removed the 'key' argument from st.link_button --- ###
-                            st.link_button("🔗 Open Link", link_url, use_container_width=True)
-                        else:
-                            st.button("🔗 Open Link", use_container_width=True, disabled=True, help="No direct DOI or URL available.", key=f"disabled_link_{unique_key_base}")
-
+                        button_label = "🔗 Open PDF" if entry_type == 'doi' else "🔗 Open URL"
+                        st.link_button(button_label, link_url, use_container_width=True)
+                    
                     with col3:
-                         if google_link:
-                            ### --- FIX: Removed the 'key' argument from st.link_button --- ###
-                            st.link_button("🔍 Search", google_link, use_container_width=True)
-                         else:
-                            st.button("🔍 Search", use_container_width=True, disabled=True, help="No title available to search.", key=f"disabled_search_{unique_key_base}")
-
-                    with col4:
                         filename_col, copy_col = st.columns([4, 1])
-                        filename_col.text_input("Filename:", value=filename, key=f"filename_{unique_key_base}", label_visibility="collapsed")
-                        if copy_col.button("📋", key=f"copy_{unique_key_base}", help="Copy filename"):
-                            if copy_to_clipboard(filename, f"copy_{unique_key_base}"):
+                        filename_col.text_input("Filename:", value=filename, key=f"filename_{i}", label_visibility="collapsed")
+                        if copy_col.button("📋", key=f"copy_{i}", help="Copy filename"):
+                            if copy_to_clipboard(filename, f"copy_{i}"):
                                 st.toast(f"✅ Copied: {filename}")
-
-                    with col5:
-                        if st.button("✅ Done", key=f"done_{unique_key_base}", type="primary", use_container_width=True):
+                    
+                    with col4:
+                        if st.button("✅ Done", key=f"done_{i}", type="primary", use_container_width=True):
                             st.session_state.downloaded_keys.add(bibkey)
                             st.rerun()
-
-                    with col6:
-                        if st.button("❌ Failed", key=f"failed_{unique_key_base}", type="secondary", use_container_width=True):
+                    
+                    with col5:
+                        if st.button("❌ Failed", key=f"failed_{i}", type="secondary", use_container_width=True):
                             st.session_state.failed_keys.add(bibkey)
                             st.rerun()
+
         else:
             st.success("🎉 All items have been processed! Check the sections below.")
-
+        
+        # --- Completed and Failed sections ---
         if not completed_df.empty:
             with st.expander(f"✅ Completed Downloads ({len(completed_df)} files)", expanded=False):
-                for _, row in completed_df.iterrows():
+                for i, row in completed_df.iterrows():
                     col1, col2, col3 = st.columns([3, 4, 1.5])
                     col1.markdown(f"**✅ {row['Bib Key']}**")
                     col2.markdown(f"~~`{row['Bib Key']}.pdf`~~")
-                    if col3.button("↩️ Undo", key=f"undo_{row['Bib Key']}"):
+                    if col3.button("↩️ Undo", key=f"undo_{i}"):
                         st.session_state.downloaded_keys.discard(row['Bib Key'])
                         st.rerun()
 
         if not failed_df.empty:
-            with st.expander(f"❌ Failed Items ({len(failed_df)} files)", expanded=False):
-                for _, row in failed_df.iterrows():
+            with st.expander(f"❌ Failed Items ({len(failed_df)} files)", expanded=True):
+                for i, row in failed_df.iterrows():
                     col1, col2, col3 = st.columns([3, 4, 1.5])
                     col1.markdown(f"**❌ {row['Bib Key']}**")
                     col2.markdown(f"*{row.get('Title', 'No Title')}*")
-                    if col3.button("🔄 Retry", key=f"retry_{row['Bib Key']}"):
+                    if col3.button("🔄 Retry", key=f"retry_{i}"):
                         st.session_state.failed_keys.discard(row['Bib Key'])
                         st.rerun()
         
+        # --- ZIP creation section ---
         if st.session_state.downloaded_keys:
             with st.expander("📦 Create ZIP from Downloaded Files"):
                 zip_folder = st.text_input("📁 Folder path with renamed PDFs:")
@@ -282,14 +283,12 @@ if uploaded_file:
 st.markdown("---")
 st.markdown("""
 ### 📝 How to Use This App
-1.  **Configure**: In the sidebar, ensure "Prioritize URL from CSV" is checked if your file has a specific `URL` column you want to use.
-2.  **Upload CSV**: Provide a CSV with `Bib Key`, `Title`, and `DOI`/`URL` columns.
-3.  **Process List**: For each item, you have two choices:
-    - **🔗 Open Link**: Opens the link from the `URL` column first, or the `DOI` column as a fallback.
-    - **🔍 Search**: Opens a Google search for the paper's title.
-4.  **Download & Rename**:
-    - Use one of the links to find and download the PDF.
+1.  **Configure Options**: Use the sidebar to enable URL fallbacks if needed.
+2.  **Upload CSV**: Provide a CSV with `Bib Key`, `DOI`, and/or `URL` columns.
+3.  **Process List**:
+    - Click **Open PDF/URL** to view the paper.
     - Click **📋** to copy the correct filename (`Bib Key.pdf`).
-    - Rename your downloaded file.
-5.  **Update Status**: Click **✅ Done** to mark as complete or **❌ Failed** if you can't find the paper.
+    - Download and rename the file.
+    - Click **✅ Done** to mark as complete or **❌ Failed** for broken links.
+4.  **Manage Progress**: Use the sidebar to save your progress for later or load a previous session.
 """)
